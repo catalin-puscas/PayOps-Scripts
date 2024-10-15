@@ -1,0 +1,79 @@
+param (
+    [string]$CurrentServiceName = "Apache2.4.54",
+    [string]$CurrentFolderPath = "C:\Apache24",
+    [string]$NewFolderPath = "C:\Apache2.4.59",
+    [string]$NewServiceName = "Apache2.4.59"
+)
+
+# List of computer names
+$ComputerNames = @("Computer1", "Computer2", "Computer3")
+
+$scriptBlock = {
+    param (
+        [string]$CurrentServiceName,
+        [string]$CurrentFolderPath,
+        [string]$NewFolderPath,
+        [string]$NewServiceName
+    )
+
+    # Stop Filebeat Windows Service
+    Write-Host "Stopping Filebeat Windows Service..."
+    Get-Service -Name "filebeat" | Stop-Service
+
+    # Stop the current Apache Windows Service
+    Write-Host "Stopping the current Apache Windows Service..."
+    Stop-Service -Name $CurrentServiceName -Force
+
+    # Ensure the current Apache service is stopped
+    $service = Get-Service -Name $CurrentServiceName
+    if ($service.Status -ne 'Stopped') {
+        Write-Host "Failed to stop the current Apache service. Exiting script."
+        exit
+    }
+
+    # Set today's date as a variable
+    $TodaysDate = Get-Date -Format "MMddyyyy"
+    Write-Host "Today's date set to: $TodaysDate"
+
+    # Rename existing Apache install directory
+    Write-Host "Renaming existing Apache install directory..."
+    Rename-Item $CurrentFolderPath -NewName "${CurrentFolderPath}_BACKUP_$TodaysDate"
+
+    # Rename the new Apache folder to the current folder path
+    Write-Host "Renaming the new Apache folder to the current folder path..."
+    Rename-Item $NewFolderPath -NewName $CurrentFolderPath
+
+    # Install the new Apache version as a Windows service
+    Write-Host "Installing the new Apache version as a Windows service..."
+    & "$CurrentFolderPath\bin\httpd.exe" -k install -n $NewServiceName
+
+    # Start the new Apache Windows Service
+    Write-Host "Starting the new Apache Windows Service..."
+    Start-Service -Name $NewServiceName
+
+    # Start Filebeat Windows Service
+    Write-Host "Starting Filebeat Windows Service..."
+    Get-Service -Name "filebeat" | Start-Service
+
+    # Get local 10. address and set as variable
+    Write-Host "Getting local 10. address..."
+    $ipv4 = (Get-NetIPAddress | Where-Object {$_.AddressState -eq "Preferred" -and $_.IPAddress -like "10*"}).IPAddress
+
+    # Test the new Apache service
+    Write-Host "Testing new Apache service..."
+    $testResult = Invoke-WebRequest -UseBasicParsing "http://$ipv4/" | Select-Object StatusCode, Content
+
+    Write-Host "New Apache service started and tested successfully."
+    Write-Host "Status Code: $($testResult.StatusCode)"
+    Write-Host "Content: $($testResult.Content)"
+
+    # Disable the old Apache service
+    Write-Host "Disabling the old Apache service $CurrentServiceName..."
+    Set-Service -Name $CurrentServiceName -StartupType Disabled
+    Write-Host "Old Apache service $CurrentServiceName has been disabled."
+}
+
+foreach ($computer in $ComputerNames) {
+    Write-Host "Executing script on $computer..."
+    Invoke-Command -ComputerName $computer -ScriptBlock $scriptBlock -ArgumentList $CurrentServiceName, $CurrentFolderPath, $NewFolderPath, $NewServiceName
+}
