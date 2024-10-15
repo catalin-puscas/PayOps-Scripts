@@ -1,0 +1,80 @@
+param (
+    [string]$CurrentServiceName = "Apache2.4.54",
+    [string]$CurrentFolderPath = "C:\Apache24",
+    [string]$NewInstallPath = "\\ccufs181.ccasp1.yardi.com\FTPShare\CatalinP\httpd-2.4.59-240404-win64-VS17\Apache2.4.59",
+    [string]$NewServiceName = "Apache2.4.59",
+    [string]$NewFolderPath = "C:\Apache2.4.59"
+)
+
+# List of computer names
+$ComputerNames = @("ccuapa18", "ccuapa60", "ccuapa76", "ccuapa77", "ccuapa78", "ccuapa79", "ccuapa20", "ccuapa56")
+
+
+# Get credentials once for all machines
+$credential = Get-Credential
+
+$scriptBlock = {
+    param (
+        [string]$CurrentServiceName,
+        [string]$CurrentFolderPath,
+        [string]$NewInstallPath,
+        [string]$NewServiceName,
+        [string]$NewFolderPath
+    )
+
+    # Map network drive with credentials
+    Write-Host "Mapping network drive for remote path..."
+    $networkDrive = "Z:"
+    if (!(Test-Path $networkDrive)) {
+        New-PSDrive -Name Z -PSProvider FileSystem -Root $NewInstallPath -Credential $using:credential
+        Write-Host "Mapped network drive Z: to the remote location."
+    } else {
+        Write-Host "Network drive Z: already mapped."
+    }
+
+    # Copy install files to the new directory
+    Write-Host "Copying install files to the new directory..."
+    Copy-Item "$NewInstallPath" -Destination "C:\" -Recurse
+
+    # Copy workers.properties from existing Apache install to the new directory
+    Write-Host "Copying workers.properties from existing install to new directory..."
+    Copy-Item "$CurrentFolderPath\Conf\workers.properties" -Destination "$NewFolderPath\conf"
+
+    # Copy configuration files
+    Write-Host "Copying configuration files..."
+    Get-ChildItem "$CurrentFolderPath\conf" -Filter *.conf | ForEach-Object {
+        $destinationPath = Join-Path -Path "$NewFolderPath\conf" -ChildPath $_.Name
+        Copy-Item -Path $_.FullName -Destination $destinationPath -Force
+    }
+
+    # Copy modsecurity_crs and ssl folders if they exist
+    Write-Host "Checking for and copying modsecurity_crs and ssl folders if they exist..."
+    if (Test-Path "$CurrentFolderPath\conf\modsecurity_crs") {
+        Copy-Item "$CurrentFolderPath\conf\modsecurity_crs" -Destination "$NewFolderPath\conf" -Recurse -Force
+        Write-Host "Copied modsecurity_crs folder."
+    } else {
+        Write-Host "modsecurity_crs folder does not exist."
+    }
+
+    if (Test-Path "$CurrentFolderPath\conf\ssl") {
+        Copy-Item "$CurrentFolderPath\conf\ssl" -Destination "$NewFolderPath\conf" -Recurse -Force
+        Write-Host "Copied ssl folder."
+    } else {
+        Write-Host "ssl folder does not exist."
+    }
+
+
+
+    # Copy ..\modules\mod_jk.so (file) & ..\modules\mod_security\ (folder) from existing Apache install
+    Write-Host "Copying module files..."
+    Copy-Item "$CurrentFolderPath\modules\mod_jk.so" -Destination "$NewFolderPath\modules"
+    Copy-Item "$CurrentFolderPath\modules\mod_security2.so" -Destination "$NewFolderPath\modules"
+    Copy-Item "$CurrentFolderPath\modules\mod_security" -Destination "$NewFolderPath\modules" -Recurse
+
+    Write-Host "Preparation completed successfully."
+}
+
+foreach ($computer in $ComputerNames) {
+    Write-Host "Executing script on $computer..."
+    Invoke-Command -ComputerName $computer -ScriptBlock $scriptBlock -ArgumentList $CurrentServiceName, $CurrentFolderPath, $NewInstallPath, $NewServiceName, $NewFolderPath
+}
