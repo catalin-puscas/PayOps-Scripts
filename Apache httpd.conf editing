@@ -1,0 +1,105 @@
+# List of machines to update
+$machines = @("cctapa11")
+
+# Define the consistent Apache service name and folder path
+$apacheServiceName = "Apache2.4.54"
+$apacheFolderPath = "C:\Apache24"
+
+# Function to stop the Apache service
+function Stop-ApacheService {
+    param (
+        [string]$serviceName,
+        [string]$machine
+    )
+    Write-Host "Stopping the Apache service on $machine..." -ForegroundColor Yellow
+    Invoke-Command -ComputerName $machine -ScriptBlock { param ($serviceName) Stop-Service -Name $serviceName -Force } -ArgumentList $serviceName
+}
+
+# Function to start the Apache service
+function Start-ApacheService {
+    param (
+        [string]$serviceName,
+        [string]$machine
+    )
+    Write-Host "Starting the Apache service on $machine..." -ForegroundColor Yellow
+    Invoke-Command -ComputerName $machine -ScriptBlock { param ($serviceName) Start-Service -Name $serviceName } -ArgumentList $serviceName
+}
+
+# Function to update the httpd.conf file
+function Update-HttpdConf {
+    param (
+        [string]$apacheFolderPath,
+        [string]$httpdConfPath,
+        [string]$machine
+    )
+    $configLines = @"
+
+# Disable HTTP OPTIONS Method
+<Directory />
+    <Limit OPTIONS>
+        Require all denied
+    </Limit>
+</Directory>
+
+<Location />
+    <Limit OPTIONS>
+        Require all denied
+    </Limit>
+</Location>
+
+# Disable HTTP Trace Method
+TraceEnable off
+"@
+
+    Invoke-Command -ComputerName $machine -ScriptBlock {
+        param ($httpdConfPath, $configLines)
+        $httpdConfContent = Get-Content -Path $httpdConfPath
+        $httpdConfContent += $configLines
+        Set-Content -Path $httpdConfPath -Value $httpdConfContent
+    } -ArgumentList $httpdConfPath, $configLines
+}
+
+foreach ($machine in $machines) {
+    # Path to the httpd.conf file
+    $httpdConfPath = Join-Path -Path $apacheFolderPath -ChildPath "conf\httpd.conf"
+
+    # Check if the httpd.conf file exists
+    $fileExists = Invoke-Command -ComputerName $machine -ScriptBlock {
+        param ($httpdConfPath)
+        Test-Path -Path $httpdConfPath
+    } -ArgumentList $httpdConfPath
+
+    if ($fileExists) {
+        try {
+            # Stop the Apache service
+            Stop-ApacheService -serviceName $apacheServiceName -machine $machine
+
+            # Update the httpd.conf file
+            Update-HttpdConf -apacheFolderPath $apacheFolderPath -httpdConfPath $httpdConfPath -machine $machine
+
+            Write-Host "httpd.conf file updated successfully on ${machine}." -ForegroundColor Green
+
+            # Start the Apache service
+            Start-ApacheService -serviceName $apacheServiceName -machine $machine
+
+            # Check if Apache service is running
+            $serviceStatus = Invoke-Command -ComputerName $machine -ScriptBlock {
+                param ($serviceName)
+                Get-Service -Name $serviceName
+            } -ArgumentList $apacheServiceName
+
+            if ($serviceStatus.Status -eq 'Running') {
+                Write-Host "Apache service is running successfully on ${machine}." -ForegroundColor Green
+            } else {
+                Write-Host "Apache service failed to start on ${machine}." -ForegroundColor Red
+            }
+        } catch {
+            $errorMsg = $_.Exception.Message
+            Write-Host "An error occurred on ${machine}: $errorMsg" -ForegroundColor Red
+            Write-Host "Attempting to start the Apache service on ${machine}..." -ForegroundColor Yellow
+            Start-ApacheService -serviceName $apacheServiceName -machine $machine
+        }
+    } else {
+        Write-Host "The httpd.conf file was not found on ${machine} at the specified path. Please check the path and try again." -ForegroundColor Red
+    }
+}
