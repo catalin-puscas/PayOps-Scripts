@@ -1,0 +1,68 @@
+param (
+    [string]$CurrentServiceName = "Apache2.4.59",  # The current service (new version)
+    [string]$OldServiceName = "Apache2.4",         # The old service (old version)
+    [string]$BackupFolderPath = "C:\Apache24_BACKUP_09102024",  # Backup folder with today's date
+    [string]$CurrentFolderPath = "C:\Apache24",     # The folder where Apache is currently running
+    [string]$OldFolderPath = "C:\Apache2.4.59"     # The destination folder for the current Apache24
+)
+
+# List of computer names
+$ComputerNames = @("Computer1", "Computer2", "Computer3")
+
+$rollbackScriptBlock = {
+    param (
+        [string]$CurrentServiceName,
+        [string]$OldServiceName,
+        [string]$BackupFolderPath,
+        [string]$CurrentFolderPath,
+        [string]$OldFolderPath
+    )
+
+    # Stop Filebeat Windows Service
+    Write-Host "Stopping Filebeat Windows Service..."
+    Get-Service -Name "filebeat" | Stop-Service
+
+    # Stop the current Apache2.4.59 Windows Service
+    Write-Host "Stopping the current Apache2.4.59 Windows Service..."
+    Stop-Service -Name $CurrentServiceName -Force
+
+    # Ensure the current Apache service is stopped
+    $service = Get-Service -Name $CurrentServiceName
+    if ($service.Status -ne 'Stopped') {
+        Write-Host "Failed to stop the current Apache2.4.59 service. Exiting script."
+        exit
+    }
+
+    # Rename the current Apache24 folder to Apache2.4.59
+    Write-Host "Renaming current Apache24 folder to Apache2.4.59..."
+    Rename-Item $CurrentFolderPath -NewName $OldFolderPath
+
+    # Rename the backup folder (Apache24_BACKUP_09102024) back to Apache24
+    Write-Host "Renaming Apache24_BACKUP_09102024 folder to Apache24..."
+    Rename-Item $BackupFolderPath -NewName $CurrentFolderPath
+
+    # Start the old Apache2.4 Windows Service
+    Write-Host "Starting the old Apache2.4 Windows Service..."
+    Start-Service -Name $OldServiceName
+
+    # Start Filebeat Windows Service
+    Write-Host "Starting Filebeat Windows Service..."
+    Get-Service -Name "filebeat" | Start-Service
+
+    # Get local 10. address and set as variable
+    Write-Host "Getting local 10. address..."
+    $ipv4 = (Get-NetIPAddress | Where-Object {$_.AddressState -eq "Preferred" -and $_.IPAddress -like "10*"}).IPAddress
+
+    # Test the old Apache service
+    Write-Host "Testing old Apache service..."
+    $testResult = Invoke-WebRequest -UseBasicParsing "http://$ipv4/" | Select-Object StatusCode, Content
+
+    Write-Host "Old Apache service started and tested successfully."
+    Write-Host "Status Code: $($testResult.StatusCode)"
+    Write-Host "Content: $($testResult.Content)"
+}
+
+foreach ($computer in $ComputerNames) {
+    Write-Host "Executing rollback script on $computer..."
+    Invoke-Command -ComputerName $computer -ScriptBlock $rollbackScriptBlock -ArgumentList $CurrentServiceName, $OldServiceName, $BackupFolderPath, $CurrentFolderPath, $OldFolderPath
+}
