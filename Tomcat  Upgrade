@@ -1,0 +1,105 @@
+# Step 1
+
+param (
+    [string]$CurrentServiceName = "Tomcat8",
+    [string]$CurrentFolderPath = "C:\Program Files\Apache Software Foundation\Tomcat 8.5.92",
+    [string]$NewFolderPath = "C:\Program Files\Apache Software Foundation\Tomcat 9.0_Tomcat9.0.87",
+    [string]$NewServiceName = "Tomcat9.0.87"
+)
+
+# Define the path to the installer and the temporary path
+$initialInstallerPath = "\\ccufs181.ccasp1.yardi.com\FTPShare\CatalinP\apache-tomcat-9.0.87.exe"
+$tempInstallerPath = "C:\Temp\apache-tomcat-9.0.87.exe"
+
+
+# Ensure the temporary directory exists
+if (-not (Test-Path "C:\Temp")) {
+    New-Item -ItemType Directory -Path "C:\Temp"
+}
+
+# Copy the installer to the temporary path
+Copy-Item -Path $initialInstallerPath -Destination $tempInstallerPath -Force
+
+
+# Run the installer in silent mode with the configuration file
+Start-Process -FilePath $tempInstallerPath 
+
+# Wait for user confirmation to proceed with Step 2
+$confirmation = Read-Host "Please complete the Tomcat installation manually. Once completed, type 'Y' to proceed with the service configuration."
+if ($confirmation -ne 'Y') {
+    Write-Host "Aborting service configuration. Complete the installation and try again."
+    exit
+}
+
+Write-Host "Tomcat installation completed successfully. Proceeding with service configuration..."
+
+# Step 2
+
+# Update the service configuration
+$jdklookup = Get-ChildItem "C:\Program Files\RedHat" | Select-Object -ExpandProperty Name
+
+& "$NewFolderPath\bin\$NewServiceName.exe" //US//$NewServiceName --Classpath="$NewFolderPath\bin\bootstrap.jar;$NewFolderPath\bin\tomcat-juli.jar"
+& "$NewFolderPath\bin\$NewServiceName.exe" //US//$NewServiceName --Jvm="C:\Program Files\RedHat\$jdklookup\bin\server\jvm.dll"
+& "$NewFolderPath\bin\$NewServiceName.exe" //US//$NewServiceName --StartPath="$NewFolderPath"
+
+# Add new JVM options and memory settings
+$memoryMIN = 8192
+$memoryMAX = 8192
+
+& "$NewFolderPath\bin\$NewServiceName.exe" //US//$NewServiceName --JvmMs=$memoryMIN --JvmMx=$memoryMAX
+
+# Copying the necessary files from the old installation to the new one
+robocopy "$CurrentFolderPath\conf\Catalina" "$NewFolderPath\conf\Catalina" *.* /s /e /MT:50
+robocopy "$CurrentFolderPath\webapps" "$NewFolderPath\webapps" *.* /s /e /MT:50 /XD "docs" "manager" "ROOT" "logs"
+robocopy "$CurrentFolderPath\lib" "$NewFolderPath\lib" vistaclassloader.jar
+robocopy "$CurrentFolderPath\bin" "$NewFolderPath\bin" tcnative-1.dll
+robocopy "$CurrentFolderPath\lib" "$NewFolderPath\lib" ojdbc7.jar
+robocopy "$CurrentFolderPath\conf" "$NewFolderPath\conf" /IS server.xml
+
+# Update service display name and configure it to start automatically
+Set-Service -Name "$NewServiceName" -DisplayName "Apache Tomcat 9.0 Tomcat9.0.87"
+
+sc.exe config "$NewServiceName" obj= LocalSystem
+sc.exe config "$NewServiceName" start= demand
+
+
+# Output the result
+# Write-Host "Tomcat installation completed, and the new service has not been started."
+
+# Step 3: Open the Tomcat configuration executables to manually copy Java options
+
+Write-Host "Opening Tomcat8w and Tomcat9.0.87w configuration windows..."
+
+# Open the old Tomcat service configuration window
+Start-Process -FilePath "$CurrentFolderPath\bin\Tomcat8w.exe" -ArgumentList "//ES//$CurrentServiceName"
+
+# Open the new Tomcat service configuration window
+Start-Process -FilePath "$NewFolderPath\bin\Tomcat9.0.87w.exe" -ArgumentList "//ES//$NewServiceName"
+
+Write-Host "Please manually copy the extra Java options from the old Tomcat configuration to the new one."
+
+# Output the result
+Write-Host "Tomcat configuration windows are open for manual configuration."
+
+# Step 4: Wait for user input before launching the uninstaller for the old Tomcat
+
+$uninstallConfirmation = Read-Host "Once you've completed the transfer of Java options, type 'Y' to proceed with uninstalling the old Tomcat version."
+if ($uninstallConfirmation -ne 'Y') {
+    Write-Host "Old Tomcat version will not be uninstalled. Please complete the process and try again later."
+    exit
+}
+
+Write-Host "Proceeding to launch the uninstaller for the old Tomcat version..."
+
+# Start the old Tomcat uninstaller executable
+$uninstallerPath = "$CurrentFolderPath\Uninstall.exe"
+
+if (Test-Path $uninstallerPath) {
+    Start-Process -FilePath $uninstallerPath -ArgumentList "-ServiceName=$CurrentServiceName"
+    Write-Host "The uninstaller has been launched. Please manually complete the uninstallation."
+} else {
+    Write-Host "Uninstaller not found at $uninstallerPath. Please uninstall the old version manually."
+}
+
+# Output the result
+Write-Host "Tomcat upgrade process completed."
