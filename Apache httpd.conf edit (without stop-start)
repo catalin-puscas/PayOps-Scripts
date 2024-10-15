@@ -1,0 +1,58 @@
+# List of machines to update
+$machines = @("ccuapa44")
+
+# Define the Apache folder path
+$apacheFolderPath = "C:\Apache24"
+
+# Function to update the httpd.conf file
+function Update-HttpdConf {
+    param (
+        [string]$apacheFolderPath,
+        [string]$httpdConfPath,
+        [string]$machine
+    )
+    $configLines = @"
+
+# Disable HTTP OPTIONS Method
+<Directory />
+    <Limit OPTIONS>
+        Require all denied
+    </Limit>
+</Directory>
+
+# Disable HTTP Trace Method
+TraceEnable off
+"@
+
+    Invoke-Command -ComputerName $machine -ScriptBlock {
+        param ($httpdConfPath, $configLines)
+        $httpdConfContent = Get-Content -Path $httpdConfPath
+        $httpdConfContent += $configLines
+        Set-Content -Path $httpdConfPath -Value $httpdConfContent
+    } -ArgumentList $httpdConfPath, $configLines
+}
+
+foreach ($machine in $machines) {
+    # Path to the httpd.conf file
+    $httpdConfPath = Join-Path -Path $apacheFolderPath -ChildPath "conf\httpd.conf"
+
+    # Check if the httpd.conf file exists
+    $fileExists = Invoke-Command -ComputerName $machine -ScriptBlock {
+        param ($httpdConfPath)
+        Test-Path -Path $httpdConfPath
+    } -ArgumentList $httpdConfPath
+
+    if ($fileExists) {
+        try {
+            # Update the httpd.conf file
+            Update-HttpdConf -apacheFolderPath $apacheFolderPath -httpdConfPath $httpdConfPath -machine $machine
+
+            Write-Host "httpd.conf file updated successfully on ${machine}." -ForegroundColor Green
+        } catch {
+            $errorMsg = $_.Exception.Message
+            Write-Host "An error occurred on ${machine}: $errorMsg" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "The httpd.conf file was not found on ${machine} at the specified path. Please check the path and try again." -ForegroundColor Red
+    }
+}
