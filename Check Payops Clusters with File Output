@@ -1,0 +1,49 @@
+  shift  # Shift to the next arguments which are the namespaces
+  local namespaces=("$@")
+
+  echo "Checking cluster: $cluster"
+
+  # Set the Kubernetes context to the current cluster
+  if kubectl config get-contexts "$cluster" > /dev/null 2>&1; then
+    kubectl config use-context "$cluster"
+  else
+    echo "Error: No context exists with the name: $cluster"
+    return
+  fi
+
+  # Loop through each namespace for the cluster
+  for namespace in "${namespaces[@]}"; do
+    echo "Checking namespace: $namespace"
+
+    # Get pods with problematic statuses in the namespace
+    kubectl get pods -n "$namespace" --no-headers \
+      | awk '{print $1, $3}' \
+      | while read -r pod status; do
+        if [[ "$status" == "ImagePullBackOff" || "$status" == "Error" || "$status" == "Err" || "$status" == "ContainerCreating" ]]; then
+          # Output to the screen with labels
+          echo "Cluster: $cluster, Namespace: $namespace, Pod: $pod, ErrorCondition: $status"
+          # Write output to the local CSV file
+          echo "$cluster,$namespace,$pod,$status" >> "$LOCAL_OUTPUT_FILE"
+        fi
+      done
+  done
+}
+
+# Loop through the clusters and their namespaces
+for cluster in "${!clusters_and_namespaces[@]}"; do
+  # Get the namespaces for the current cluster
+  namespaces="${clusters_and_namespaces[$cluster]}"
+
+  # Call the function to check pod statuses for the given cluster and namespaces
+  check_pod_statuses "$cluster" $namespaces
+done
+
+# Use smbclient to transfer the CSV file to the OneDrive folder on the Windows VM
+smbclient "//$SMB_SERVER/$SMB_SHARE" -U "$SMB_USERNAME%$SMB_PASSWORD" -c "cd \"$REMOTE_DIR\"; put $LOCAL_OUTPUT_FILE"
+
+# Check if the transfer was successful
+if [ $? -eq 0 ]; then
+  echo "Transfer to OneDrive was successful!"
+else
+  echo "Transfer to OneDrive failed!"
+fi
