@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Define clusters statically (this will check all namespaces)
+clusters=("pct-prod-ycrm" "pct-prod-payops" "pct-prod-mlai" "pcu-prod-yhr")
+
+# Function to check for problematic pod statuses in all namespaces of a cluster
+check_pod_statuses() {
+  local cluster=$1
+
+  echo "Checking cluster: $cluster"
+
+  # Set the Kubernetes context to the current cluster
+  if kubectl config get-contexts "$cluster" > /dev/null 2>&1; then
+    kubectl config use-context "$cluster"
+  else
+    echo "Error: No context exists with the name: $cluster"
+    return
+  fi
+
+  # Get all namespaces in the cluster
+  namespaces=$(kubectl get namespaces -o jsonpath="{.items[*].metadata.name}")
+
+  # Loop through each namespace for the cluster
+  for namespace in $namespaces; do
+    echo "Checking namespace: $namespace"
+
+    # Get pods with problematic statuses in the namespace
+    kubectl get pods -n "$namespace" --no-headers \
+      | awk '{print $1, $3}' \
+      | while read -r pod status; do
+        if [[ "$status" == "ImagePullBackOff" || "$status" == "Error" || "$status" == "Err" || "$status" == "ContainerCreating" ]]; then
+          echo "Cluster: $cluster, Namespace: $namespace, Pod: $pod, Status: $status"
+        fi
+      done
+  done
+}
+
+# Loop through the clusters and check all namespaces
+for cluster in "${clusters[@]}"; do
+  # Call the function to check pod statuses for the given cluster and all its namespaces
+  check_pod_statuses "$cluster"
+done
