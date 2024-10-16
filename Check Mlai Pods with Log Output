@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Define SMB server details
+SMB_SERVER="pcz210ws22h215.YSIDEV.YARDI.CLOUD"
+SMB_SHARE="c$"  # Share for C drive
+SMB_USERNAME="ysi\\catalinp"  # Replace with your domain and username
+REMOTE_DIR="Users/catalinp/OneDrive - Yardi Systems, Inc/Pod Logs"  # Remote directory path, forward slashes
+
+# Prompt for the SMB password
+read -s -p "Enter SMB password for ${SMB_USERNAME}: " SMB_PASSWORD
+echo  # Move to a new line after password input
+
+# Define the namespace to check
+NAMESPACE="mlai"
+
+# Loop through all the pods in the mlai namespace and check for Oracle connection issues
+kubectl -n "$NAMESPACE" get pods --no-headers -o custom-columns=":metadata.name" | while read pod; do
+    echo "Checking logs for pod: $pod"
+
+    # Check logs for Oracle connection issues and save logs if found
+    if kubectl -n "$NAMESPACE" logs "$pod" --all-containers=true | grep -i "Could not connection to oracle"; then
+        echo "$pod has Oracle connection issues"
+
+        # Define the local log file named after the pod (only the pod name)
+        LOCAL_LOG_FILE="${pod}.txt"
+
+        # Save the pod logs to a local file
+        kubectl -n "$NAMESPACE" logs "$pod" --all-containers=true > "$LOCAL_LOG_FILE"
+
+        # Check if the log file was created
+        if [ ! -f "$LOCAL_LOG_FILE" ]; then
+            echo "Error: Log file $LOCAL_LOG_FILE not found or failed to generate!"
+            continue
+        fi
+
+        # Use smbclient to transfer the log file to the OneDrive folder on the Windows VM
+        smbclient "//$SMB_SERVER/$SMB_SHARE" -U "$SMB_USERNAME%$SMB_PASSWORD" -c "cd \"$REMOTE_DIR\"; put $LOCAL_LOG_FILE"
+
+        # Check if the transfer was successful
+        if [ $? -eq 0 ]; then
+            echo "Transfer of $LOCAL_LOG_FILE to OneDrive was successful!"
+        else
+            echo "Transfer of $LOCAL_LOG_FILE to OneDrive failed!"
+        fi
+    fi
+done
