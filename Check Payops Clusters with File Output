@@ -1,3 +1,32 @@
+#!/bin/bash
+
+# Define temporary local output CSV file
+LOCAL_OUTPUT_FILE="Payops_Clusters_Check.csv"
+
+# Define SMB server details
+SMB_SERVER="pcz210ws22h215.YSIDEV.YARDI.CLOUD"
+SMB_SHARE="c$"  # Share for C drive
+SMB_USERNAME="ysi\\catalinp"  # Replace with your domain and username
+REMOTE_DIR="Users/catalinp/OneDrive - Yardi Systems, Inc/Payops Cluster Checks"  # Remote directory path, forward slashes
+
+# Prompt for the SMB password
+read -s -p "Enter SMB password for ${SMB_USERNAME}: " SMB_PASSWORD
+echo  # Move to a new line after password input
+
+# Write CSV header to local file
+echo "Cluster,Namespace,Pod,ErrorCondition" > "$LOCAL_OUTPUT_FILE"
+
+# Define clusters and namespaces statically
+declare -A clusters_and_namespaces=(
+  ["pct-prod-ycrm"]="rcash ycrm"
+  ["pct-prod-payops"]="elevatenet rcash ycrm"
+  ["pct-prod-mlai"]="mlai"
+  # Add more clusters and their corresponding namespaces here
+)
+
+# Function to check for problematic pod statuses in a cluster's namespaces
+check_pod_statuses() {
+  local cluster=$1
   shift  # Shift to the next arguments which are the namespaces
   local namespaces=("$@")
 
