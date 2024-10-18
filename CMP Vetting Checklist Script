@@ -1,0 +1,289 @@
+# Define the log file path
+$logFile = "C:\VettingChecklistLog.txt"
+
+# Create or clear the log file
+New-Item -Path $logFile -ItemType File -Force | Out-Null
+
+# PART 1: DLL Version Comparison
+$logHeader = "=== PART 1: DLL Version Comparison ==="
+Write-Host $logHeader
+Add-Content -Path $logFile -Value "`n$logHeader`n"
+
+# Define the source server IP
+$sourceIP = "10.99.0.166" # Replace with the actual IP
+
+# Define the DLL paths for Server 1 (local host)
+$server1DLLs = @(
+    "C:\rCashConnect\bin\YSI.CashManagement.Services.dll",
+    "C:\rCashConnect\bin\YSI.CashManagementBase.dll",
+    "C:\rCashConnect\bin\YSI.CashManagementCommon.dll",
+    "C:\rCashConnect\bin\YSI.CheckScan.dll",
+    "C:\rCashConnect\bin\YSI.CreditCard.dll",
+    "C:\BillPayConnect\bin\YSI.BillPayWebServiceLibrary.dll",
+    "C:\BillPayConnect\bin\YSI.ConnectPlus.BillPay.Services.dll"
+)
+
+# Define the DLL paths for Server 2 (remote server)
+$server2DLLs = @(
+    "\\$sourceIP\c$\rCashConnect\bin\YSI.CashManagement.Services.dll",
+    "\\$sourceIP\c$\rCashConnect\bin\YSI.CashManagementBase.dll",
+    "\\$sourceIP\c$\rCashConnect\bin\YSI.CashManagementCommon.dll",
+    "\\$sourceIP\c$\rCashConnect\bin\YSI.CheckScan.dll",
+    "\\$sourceIP\c$\rCashConnect\bin\YSI.CreditCard.dll",
+    "\\$sourceIP\c$\BillPayConnect\bin\YSI.BillPayWebServiceLibrary.dll",
+    "\\$sourceIP\c$\BillPayConnect\bin\YSI.ConnectPlus.BillPay.Services.dll"
+)
+
+# Log the start of the DLL comparison process
+$logMessage = "Starting DLL version comparison between Server 1 (Local) and Server 2 ($sourceIP) at $(Get-Date)"
+Write-Host $logMessage
+Add-Content -Path $logFile -Value $logMessage
+
+# Loop through each DLL and compare versions between Server 1 and Server 2
+for ($i = 0; $i -lt $server1DLLs.Count; $i++) {
+    $server1DLLPath = $server1DLLs[$i]
+    $server2DLLPath = $server2DLLs[$i]
+
+    # Check if the DLL exists on Server 1 and Server 2 separately
+    $server1Exists = Test-Path $server1DLLPath
+    $server2Exists = Test-Path $server2DLLPath
+
+    if ($server1Exists -and $server2Exists) {
+        # Get the file version of the DLL from Server 1 and Server 2
+        $server1Version = (Get-Item $server1DLLPath).VersionInfo.FileVersion
+        $server2Version = (Get-Item $server2DLLPath).VersionInfo.FileVersion
+
+        # Compare versions
+        if ($server1Version -eq $server2Version) {
+            $logMessage = "DLL version match: $server1DLLPath and $server2DLLPath - Version: $server1Version"
+        } else {
+            $logMessage = "DLL version mismatch: $server1DLLPath (Version: $server1Version) and $server2DLLPath (Version: $server2Version)"
+        }
+    } else {
+        # Log if one or both DLLs are missing
+        if (-not $server1Exists) {
+            $logMessage = "Missing DLL on Server 1: $server1DLLPath"
+        }
+        if (-not $server2Exists) {
+            $logMessage = "Missing DLL on Server 2: $server2DLLPath"
+        }
+    }
+    
+    # Write to console and log file
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+}
+
+# Log completion message
+$completionMessage = "DLL version comparison completed at $(Get-Date)"
+Write-Host $completionMessage
+Add-Content -Path $logFile -Value $completionMessage
+
+# Add a blank row to separate sections
+Add-Content -Path $logFile -Value "`n`n"
+
+
+# PART 2: WCF Services Check
+$logHeader = "=== PART 2: WCF Services Check ==="
+Write-Host $logHeader
+Add-Content -Path $logFile -Value "`n$logHeader`n"
+
+
+# Define the display names of the features to check
+$featuresToCheck = @(
+    "HTTP Activation",
+    "TCP Port Sharing"
+)
+
+# Loop through each feature and check if it's installed
+foreach ($featureDisplayName in $featuresToCheck) {
+    $featureStatus = Get-WindowsFeature | Where-Object { $_.DisplayName -eq $featureDisplayName }
+
+    if ($featureStatus.Installed) {
+        $logMessage = "$($featureStatus.DisplayName) is installed."
+    } else {
+        $logMessage = "$($featureStatus.DisplayName) is not installed."
+    }
+    
+    # Write to console and log file
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+}
+
+# Log completion message
+$completionMessage = "Feature check completed at $(Get-Date)"
+Write-Host $completionMessage
+Add-Content -Path $logFile -Value $completionMessage
+
+# Add a blank row to separate sections
+Add-Content -Path $logFile -Value "`n`n"
+
+
+# PART 3: IIS Application Pool Check
+$logHeader = "=== PART 3: IIS Application Pool Check ==="
+Write-Host $logHeader
+Add-Content -Path $logFile -Value "`n$logHeader`n"
+
+# Define the IIS Application Pools to check
+$appPoolsToCheck = @("BillPayConnect", "rCashConnect")
+
+# Loop through each app pool and check if it exists and if it's set to auto-start
+foreach ($appPool in $appPoolsToCheck) {
+    $appPoolStatus = Get-WebAppPoolState -Name $appPool
+    $appPoolAutoStart = (Get-ItemProperty "IIS:\AppPools\$appPool").startMode
+
+    if ($appPoolStatus) {
+        $logMessage = "$appPool application pool exists."
+        if ($appPoolAutoStart -eq "AlwaysRunning") {
+            $logMessage += " Auto-start is enabled."
+        } else {
+            $logMessage += " Auto-start is not enabled."
+        }
+    } else {
+        $logMessage = "$appPool application pool does not exist."
+    }
+
+    # Write to console and log file
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+}
+
+# Log completion message
+$completionMessage = "IIS Application Pool check completed at $(Get-Date)"
+Write-Host $completionMessage
+Add-Content -Path $logFile -Value $completionMessage
+
+# Add a blank row to separate sections
+Add-Content -Path $logFile -Value "`n`n"
+
+# PART 4: URL Reachability Check
+$logHeader = "=== PART 4: URL Reachability Check ==="
+Write-Host $logHeader
+Add-Content -Path $logFile -Value "`n$logHeader`n"
+
+# Define the URLs to check
+$urlsToCheck = @(
+    "http://localhost/rCashConnect",
+    "http://localhost/BillPayConnect"
+)
+
+# Loop through each URL and check if it's reachable
+foreach ($url in $urlsToCheck) {
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+        if ($response.StatusCode -eq 200) {
+            $logMessage = "URL $url is reachable."
+        } else {
+            $logMessage = "URL $url returned status code: $($response.StatusCode)"
+        }
+    } catch {
+        $logMessage = "URL $url is not reachable. Error: $_"
+    }
+
+    # Write to console and log file
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+}
+
+# Log completion message
+$completionMessage = "URL reachability check completed at $(Get-Date)"
+Write-Host $completionMessage
+Add-Content -Path $logFile -Value $completionMessage
+
+
+# Add a blank row to separate sections
+Add-Content -Path $logFile -Value "`n`n"
+
+# PART 5: Notepad++ Installation
+$logHeader = "=== PART 5: Notepad++ Installation ==="
+Write-Host $logHeader
+Add-Content -Path $logFile -Value "`n$logHeader`n"
+
+# Define the Notepad++ installer URL
+$notepadInstallerUrl = "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.7/npp.8.7.Installer.x64.exe"
+$installerPath = "C:\Temp\nppInstaller.exe"
+
+# Create the Temp directory if it doesn't exist
+if (-not (Test-Path "C:\Temp")) {
+    New-Item -Path "C:\Temp" -ItemType Directory | Out-Null
+}
+
+# Download the Notepad++ installer
+try {
+    $logMessage = "Downloading the latest version of Notepad++..."
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+
+    Invoke-WebRequest -Uri $notepadInstallerUrl -OutFile $installerPath
+
+    $logMessage = "Download completed. Installing Notepad++..."
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+
+    # Install Notepad++ silently
+    Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+
+    $logMessage = "Notepad++ installation completed."
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+
+    # Clean up the installer
+    Remove-Item $installerPath -Force
+
+} catch {
+    $logMessage = "Failed to download or install Notepad++. Error: $_"
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+}
+
+# Log completion message
+$completionMessage = "Notepad++ installation check completed at $(Get-Date)"
+Write-Host $completionMessage
+Add-Content -Path $logFile -Value $completionMessage
+
+# PART 6: 7-Zip Installation
+$logHeader = "=== PART 6: 7-Zip Installation ==="
+Write-Host $logHeader
+Add-Content -Path $logFile -Value "`n$logHeader`n"
+
+# Define the 7-Zip installer URL
+$sevenZipInstallerUrl = "https://www.7-zip.org/a/7z2408-x64.exe"
+$sevenZipInstallerPath = "C:\Temp\7zipInstaller.exe"
+
+# Create the Temp directory if it doesn't exist
+if (-not (Test-Path "C:\Temp")) {
+    New-Item -Path "C:\Temp" -ItemType Directory | Out-Null
+}
+
+# Download the 7-Zip installer
+try {
+    $logMessage = "Downloading the latest version of 7-Zip..."
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+
+    Invoke-WebRequest -Uri $sevenZipInstallerUrl -OutFile $sevenZipInstallerPath
+
+    $logMessage = "Download completed. Installing 7-Zip..."
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+
+    # Install 7-Zip silently
+    Start-Process -FilePath $sevenZipInstallerPath -ArgumentList "/S" -Wait
+
+    $logMessage = "7-Zip installation completed."
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+
+    # Clean up the installer
+    Remove-Item $sevenZipInstallerPath -Force
+
+} catch {
+    $logMessage = "Failed to download or install 7-Zip. Error: $_"
+    Write-Host $logMessage
+    Add-Content -Path $logFile -Value $logMessage
+}
+
+# Log completion message
+$completionMessage = "7-Zip installation check completed at $(Get-Date)"
+Write-Host $completionMessage
+Add-Content -Path $logFile -Value $completionMessage
