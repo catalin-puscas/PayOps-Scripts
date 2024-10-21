@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Always switch to the pct-prod-mlai cluster
+CLUSTER_CONTEXT="pct-prod-mlai"
+kubectl config use-context "$CLUSTER_CONTEXT"
+
 # Define SMB server details
 SMB_SERVER="pcz210ws22h215.YSIDEV.YARDI.CLOUD"
 SMB_SHARE="c$"  # Share for C drive
